@@ -28,7 +28,6 @@ jobs:
         if: ${{ inputs.test_email }}
         env:
           EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
-          SMTP_APP_PASSWORD: ${{ secrets.SMTP_APP_PASSWORD }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
         run: python stock_check.py --test-email
 
@@ -36,7 +35,6 @@ jobs:
         if: ${{ !inputs.test_email }}
         env:
           EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
-          SMTP_APP_PASSWORD: ${{ secrets.SMTP_APP_PASSWORD }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
         run: python stock_check.py
 
