@@ -8,6 +8,7 @@ state changes from out of stock to in stock. Settings come from environment vari
 import os
 import re
 import sys
+import urllib.error
 import urllib.request
 
 URL = "https://extarusa.com/ep9-mdb/?attributes=eyIxOTkiOiIyNTAiLCIyMDAiOiIyNTIiLCIyMDEiOiIifQ"
@@ -24,15 +25,28 @@ def fetch_in_stock():
     return m.group(1) == "true"
 
 
-def send_alert(subject, body, click=URL):
-    topic = os.environ["NTFY_TOPIC"]
-    headers = {"Title": subject, "Click": click, "Priority": "high", "Tags": "shopping_cart"}
-    email = os.environ.get("EMAIL_ADDRESS")
-    if email:
-        headers["Email"] = email
+def _post(topic, body, headers):
     req = urllib.request.Request(
         f"https://ntfy.sh/{topic}", data=body.encode(), headers=headers, method="POST")
-    urllib.request.urlopen(req, timeout=30).close()
+    try:
+        urllib.request.urlopen(req, timeout=30).close()
+    except urllib.error.HTTPError as e:
+        raise RuntimeError(f"ntfy returned {e.code}: {e.read().decode(errors='replace')}") from None
+
+
+def send_alert(subject, body, click=URL):
+    topic = os.environ.get("NTFY_TOPIC", "").strip()
+    if not topic:
+        raise RuntimeError("NTFY_TOPIC secret is empty or missing")
+    headers = {"Title": subject, "Click": click, "Priority": "high", "Tags": "shopping_cart"}
+    email = os.environ.get("EMAIL_ADDRESS", "").strip()
+    if email:
+        try:
+            _post(topic, body, {**headers, "Email": email})
+            return
+        except RuntimeError as e:
+            print(f"Alert with email forwarding failed ({e}); retrying push-only")
+    _post(topic, body, headers)
 
 
 def main():
