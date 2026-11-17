@@ -1,15 +1,14 @@
-"""Emails when the watched Extar product option is in stock.
+"""Alerts (via ntfy) when the watched Extar product option is in stock.
 
 Reads BigCommerce's "instock" flag from the product page and only alerts when the
-state changes from out of stock to in stock. Secrets come from environment variables.
+state changes from out of stock to in stock. Settings come from environment variables:
+  NTFY_TOPIC     required: your private ntfy topic name
+  EMAIL_ADDRESS  optional: ntfy also forwards the alert to this email
 """
 import os
 import re
-import smtplib
-import ssl
 import sys
 import urllib.request
-from email.message import EmailMessage
 
 URL = "https://extarusa.com/ep9-mdb/?attributes=eyIxOTkiOiIyNTAiLCIyMDAiOiIyNTIiLCIyMDEiOiIifQ"
 STATE_FILE = "last_state.txt"
@@ -25,32 +24,20 @@ def fetch_in_stock():
     return m.group(1) == "true"
 
 
-def send_email(subject, body):
-    address = os.environ["EMAIL_ADDRESS"]
-    msg = EmailMessage()
-    msg["Subject"] = subject
-    msg["From"] = msg["To"] = address
-    msg.set_content(body)
-    with smtplib.SMTP("smtp-mail.outlook.com", 587, timeout=30) as s:
-        s.starttls(context=ssl.create_default_context())
-        s.login(address, os.environ["SMTP_APP_PASSWORD"])
-        s.send_message(msg)
-
-
-def send_ntfy(subject, body):
-    topic = os.environ.get("NTFY_TOPIC")
-    if not topic:
-        return
+def send_alert(subject, body, click=URL):
+    topic = os.environ["NTFY_TOPIC"]
+    headers = {"Title": subject, "Click": click, "Priority": "high", "Tags": "shopping_cart"}
+    email = os.environ.get("EMAIL_ADDRESS")
+    if email:
+        headers["Email"] = email
     req = urllib.request.Request(
-        f"https://ntfy.sh/{topic}", data=body.encode(),
-        headers={"Title": subject, "Click": URL}, method="POST")
+        f"https://ntfy.sh/{topic}", data=body.encode(), headers=headers, method="POST")
     urllib.request.urlopen(req, timeout=30).close()
 
 
 def main():
     if "--test-email" in sys.argv:
-        send_email("Stock checker test", "Email setup works.")
-        send_ntfy("Stock checker test", "Push setup works.")
+        send_alert("Stock checker test", "Alert setup works.")
         print("Test sent.")
         return
 
@@ -64,9 +51,7 @@ def main():
     print(f"in_stock={in_stock} was={was}")
 
     if in_stock and not was:
-        subject, body = "Extar EP9 is IN STOCK", f"It looks available:\n{URL}"
-        send_email(subject, body)  # raises on failure, so state isn't saved and we retry
-        send_ntfy(subject, body)
+        send_alert("Extar EP9 is IN STOCK", f"It looks available:\n{URL}")  # raises on failure, so we retry next run
 
     with open(STATE_FILE, "w") as f:
         f.write("1" if in_stock else "0")
